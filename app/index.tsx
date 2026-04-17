@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { checkLoginStatus, sendLoginStatus } from '../utils/invoiceApi';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -54,8 +55,23 @@ export default function LoginScreen() {
       const data = await response.json();
 
       if (response.ok) {
+        // Get userId from token
+        const token = data.token;
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        const userId = payload.userId;
+
+        // Check login status
+        const isLoggedIn = await checkLoginStatus(userId);
+
+        if (isLoggedIn) {
+          Alert.alert('Error', 'You are already logged in on another device');
+          setIsLoading(false);
+          return;
+        }
+
         // Store token
-        await AsyncStorage.setItem('token', data.token);
+        await AsyncStorage.setItem('token', token);
+        sendLoginStatus(true);
         Alert.alert('Success', 'Login successful!');
         router.replace('/invoice');
       } else {
@@ -65,15 +81,6 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Failed to connect to server');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await AsyncStorage.removeItem('token');
-      Alert.alert('Success', 'Logged out successfully!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to logout');
     }
   };
 
@@ -124,13 +131,6 @@ export default function LoginScreen() {
               ) : (
                 <Text style={styles.loginButtonText}>Login</Text>
               )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogout}
-            >
-              <Text style={styles.logoutButtonText}>Logout</Text>
             </TouchableOpacity>
 
             <View style={styles.signupContainer}>

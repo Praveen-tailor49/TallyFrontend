@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sendLoginStatus } from '../utils/invoiceApi';
 
 import BankAndDeclarationForm from '../components/invoice/BankAndDeclarationForm';
 import BuyerForm from '../components/invoice/BuyerForm';
@@ -124,6 +126,18 @@ export default function InvoiceScreen() {
     }
   }, [checkingToken]);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        sendLoginStatus(true);
+      } else if (nextAppState === 'background') {
+        sendLoginStatus(false);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   const invoiceState: InvoiceState = useMemo(
     () => ({ seller, buyer, meta, items, bank, declaration }),
     [seller, buyer, meta, items, bank, declaration],
@@ -165,6 +179,16 @@ export default function InvoiceScreen() {
     ]);
   };
 
+  const handleLogout = async () => {
+    try {
+      await sendLoginStatus(false);
+      await AsyncStorage.removeItem('token');
+      router.replace('/');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to logout');
+    }
+  };
+
   if (checkingToken || checkingDownloads) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
@@ -202,6 +226,9 @@ export default function InvoiceScreen() {
           <View style={styles.topBar}>
             <Text style={styles.topTitle}>Tax Invoice Generator</Text>
             <View style={styles.topActions}>
+              <Pressable onPress={handleLogout} style={[styles.topBtn, styles.topBtnDanger]}>
+                <Text style={styles.topBtnText}>Logout</Text>
+              </Pressable>
               <Pressable onPress={handleGenerate} style={[styles.topBtn, styles.topBtnPrimary]}>
                 <Text style={styles.topBtnText}>Generate Invoice</Text>
               </Pressable>
@@ -270,6 +297,7 @@ const styles = StyleSheet.create({
   topBtnPrimary: { backgroundColor: '#2563eb' },
   topBtnSecondary: { backgroundColor: '#475569' },
   topBtnSuccess: { backgroundColor: '#16a34a' },
+  topBtnDanger: { backgroundColor: '#dc2626' },
   topBtnText: { color: '#fff', fontWeight: '700', fontSize: 12, letterSpacing: 0.3 },
 
   upgradeContainer: {

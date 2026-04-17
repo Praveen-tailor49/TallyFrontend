@@ -111,3 +111,31 @@ export async function incrementDownloadCount(): Promise<void> {
     console.error('incrementDownloadCount error:', e);
   }
 }
+
+export async function sendLoginStatus(status: boolean): Promise<void> {
+  const auth = await getAuth();
+  if (!auth) return;
+  try {
+    await fetch(`${API_URL}/api/login-key`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ userId: auth.userId, status }),
+    });
+  } catch (e) {
+    console.error('sendLoginStatus error:', e);
+  }
+}
+
+export async function checkLoginStatus(userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/login-key?userId=${userId}`);
+    const data = await res.json();
+    return data.status === true;
+  } catch (e) {
+    console.error('checkLoginStatus error:', e);
+    return true; // Default to allow login if API fails
+  }
+}

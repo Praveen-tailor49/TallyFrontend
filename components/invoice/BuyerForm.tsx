@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     minWidth: 160,
     maxWidth: 200,
   },
-  picker: { height: 44 },
+  picker: { width: 160 },
   saveBtn: {
     marginTop: 8,
     backgroundColor: '#2563eb',
