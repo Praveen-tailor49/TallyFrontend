@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { sendLoginStatus } from '../utils/invoiceApi';
+import { fetchSellers, getDownloadCount, sendLoginStatus } from '../utils/invoiceApi';
 
 import BankAndDeclarationForm from '../components/invoice/BankAndDeclarationForm';
 import BuyerForm from '../components/invoice/BuyerForm';
@@ -29,7 +29,6 @@ import type {
   SellerData,
 } from '../types/invoice';
 import { generateAndShareInvoicePdf } from '../utils/generateInvoicePdf';
-import { getDownloadCount } from '../utils/invoiceApi';
 
 const DEFAULT_DECLARATION =
   'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.';
@@ -45,22 +44,22 @@ function todayISO(): string {
 }
 
 const initialSeller: SellerData = {
-  companyName: 'HOW SWEET',
-  address: '123, Main Street\nCity - 123456',
-  gstin: '29ABCDE1234F1Z5',
-  stateName: 'Karnataka',
-  stateCode: '29',
-  contact: '9876543210',
-  email: 'contact@howsweet.com',
+  companyName: '',
+  address: '',
+  gstin: '',
+  stateName: '',
+  stateCode: '',
+  contact: '',
+  email: '',
 };
 
 const initialBuyer: BuyerData = {
-  companyName: 'FNP E RETAIL PRIVATE LIMITED',
-  address: 'Shop No 123, Market Area\nCity - 123456',
-  gstin: '27ABCDE1234F1Z5',
-  stateName: 'Maharashtra',
-  stateCode: '27',
-  placeOfSupply: 'Maharashtra',
+  companyName: '',
+  address: '',
+  gstin: '  ',
+  stateName: '',
+  stateCode: '',
+  placeOfSupply: '',
 };
 
 const initialMeta: InvoiceMeta = {
@@ -71,21 +70,21 @@ const initialMeta: InvoiceMeta = {
 const initialItems: InvoiceItem[] = [
   {
     slNo: 1,
-    description: 'NET Protector',
-    hsn: '85238020',
-    gstRate: 5,
-    quantity: 10,
-    unit: 'NOS',
-    rate: 500,
+    description: '',
+    hsn: '',
+    gstRate: 0,
+    quantity: 0,
+    unit: '',
+    rate: 0,
     disc: 0,
   },
 ];
 
 const initialBank: BankDetails = {
-  bankName: 'State Bank of India',
-  accountNo: '1234567890',
-  ifscCode: 'SBIN0001234',
-  bankBranch: 'Main Branch',
+  bankName: '',
+  accountNo: '',
+  ifscCode: '',
+  bankBranch: '',
 };
 
 export default function InvoiceScreen() {
@@ -127,15 +126,52 @@ export default function InvoiceScreen() {
   }, [checkingToken]);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+    if (!checkingToken) {
+      (async () => {
+        const sellers = await fetchSellers();
+        if (sellers.length > 0) {
+          setSeller(sellers[0]);
+        }
+        // Set other fields to empty
+        setBuyer({
+          companyName: '',
+          address: '',
+          gstin: '',
+          stateName: '',
+          stateCode: '',
+          placeOfSupply: '',
+        });
+        setMeta({
+          invoiceNo: '',
+          invoiceDate: todayISO(),
+        });
+        setItems([]);
+        setBank({
+          bankName: '',
+          accountNo: '',
+          ifscCode: '',
+          bankBranch: '',
+        });
+        setDeclaration(DEFAULT_DECLARATION);
+      })();
+    }
+  }, [checkingToken]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState: string) => {
       if (nextAppState === 'active') {
         sendLoginStatus(true);
       } else if (nextAppState === 'background') {
-        sendLoginStatus(false);
+        await sendLoginStatus(false);
+        await AsyncStorage.removeItem('token');
       }
     });
 
-    return () => subscription.remove();
+    return () => {
+      subscription.remove();
+      sendLoginStatus(false);
+      AsyncStorage.removeItem('token');
+    };
   }, []);
 
   const invoiceState: InvoiceState = useMemo(
@@ -168,11 +204,26 @@ export default function InvoiceScreen() {
         text: 'Reset',
         style: 'destructive',
         onPress: () => {
-          setSeller(initialSeller);
-          setBuyer(initialBuyer);
-          setMeta(initialMeta);
-          setItems(initialItems);
-          setBank(initialBank);
+          // Don't reset seller, keep it as is
+          setBuyer({
+            companyName: '',
+            address: '',
+            gstin: '',
+            stateName: '',
+            stateCode: '',
+            placeOfSupply: '',
+          });
+          setMeta({
+            invoiceNo: '',
+            invoiceDate: todayISO(),
+          });
+          setItems([]);
+          setBank({
+            bankName: '',
+            accountNo: '',
+            ifscCode: '',
+            bankBranch: '',
+          });
           setDeclaration(DEFAULT_DECLARATION);
         },
       },
