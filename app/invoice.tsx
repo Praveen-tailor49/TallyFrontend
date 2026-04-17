@@ -1,215 +1,171 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
-import * as Sharing from 'expo-sharing';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
+
+import BankAndDeclarationForm from '../components/invoice/BankAndDeclarationForm';
+import BuyerForm from '../components/invoice/BuyerForm';
+import InvoicePreview from '../components/invoice/InvoicePreview';
+import ItemsForm from '../components/invoice/ItemsForm';
+import MetaForm from '../components/invoice/MetaForm';
+import SellerForm from '../components/invoice/SellerForm';
+import type {
+  BankDetails,
+  BuyerData,
+  InvoiceItem,
+  InvoiceMeta,
+  InvoiceState,
+  SellerData,
+} from '../types/invoice';
+import { generateAndShareInvoicePdf } from '../utils/generateInvoicePdf';
+import { getDownloadCount } from '../utils/invoiceApi';
+
+const DEFAULT_DECLARATION =
+  'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.';
+
+const DOWNLOAD_LIMIT = 250;
+
+function todayISO(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+const initialSeller: SellerData = {
+  companyName: 'HOW SWEET',
+  address: '123, Main Street\nCity - 123456',
+  gstin: '29ABCDE1234F1Z5',
+  stateName: 'Karnataka',
+  stateCode: '29',
+  contact: '9876543210',
+  email: 'contact@howsweet.com',
+};
+
+const initialBuyer: BuyerData = {
+  companyName: 'FNP E RETAIL PRIVATE LIMITED',
+  address: 'Shop No 123, Market Area\nCity - 123456',
+  gstin: '27ABCDE1234F1Z5',
+  stateName: 'Maharashtra',
+  stateCode: '27',
+  placeOfSupply: 'Maharashtra',
+};
+
+const initialMeta: InvoiceMeta = {
+  invoiceNo: 'INV-001',
+  invoiceDate: todayISO(),
+};
+
+const initialItems: InvoiceItem[] = [
+  {
+    slNo: 1,
+    description: 'NET Protector',
+    hsn: '85238020',
+    gstRate: 5,
+    quantity: 10,
+    unit: 'NOS',
+    rate: 500,
+    disc: 0,
+  },
+];
+
+const initialBank: BankDetails = {
+  bankName: 'State Bank of India',
+  accountNo: '1234567890',
+  ifscCode: 'SBIN0001234',
+  bankBranch: 'Main Branch',
+};
 
 export default function InvoiceScreen() {
   const router = useRouter();
-  const [hasToken, setHasToken] = useState(false);
-  const [checkingToken, setCheckingToken] = useState(true);
-  const [downloadCount, setDownloadCount] = useState(0);
-  const [checkingDownloadCount, setCheckingDownloadCount] = useState(true);
   const insets = useSafeAreaInsets();
-  const webViewRef = useRef<WebView>(null);
 
-  // Change this based on your environment:
-  // - Physical device: Use your machine's IP (e.g., 'http://192.168.1.5:5000')
-  // - Android emulator: 'http://10.0.2.2:5000'
-  // - iOS simulator: 'http://localhost:5000'
-  const API_URL = 'https://tallybackend-rjib.onrender.com';
+  const [checkingToken, setCheckingToken] = useState(true);
+  const [checkingDownloads, setCheckingDownloads] = useState(true);
+  const [downloadCount, setDownloadCount] = useState(0);
+
+  const [seller, setSeller] = useState<SellerData>(initialSeller);
+  const [buyer, setBuyer] = useState<BuyerData>(initialBuyer);
+  const [meta, setMeta] = useState<InvoiceMeta>(initialMeta);
+  const [items, setItems] = useState<InvoiceItem[]>(initialItems);
+  const [bank, setBank] = useState<BankDetails>(initialBank);
+  const [declaration, setDeclaration] = useState<string>(DEFAULT_DECLARATION);
+
+  const [view, setView] = useState<'form' | 'preview'>('form');
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    checkToken();
-  }, []);
-
-  useEffect(() => {
-    if (hasToken) {
-      checkDownloadCount();
-    }
-  }, [hasToken]);
-
-  const checkToken = async () => {
-    try {
+    (async () => {
       const token = await AsyncStorage.getItem('token');
       if (!token) {
         router.replace('/');
-      } else {
-        setHasToken(true);
       }
-    } catch (error) {
-      console.error('Error checking token:', error);
-    } finally {
       setCheckingToken(false);
+    })();
+  }, [router]);
+
+  useEffect(() => {
+    if (!checkingToken) {
+      (async () => {
+        const c = await getDownloadCount();
+        setDownloadCount(c);
+        setCheckingDownloads(false);
+      })();
     }
-  };
+  }, [checkingToken]);
 
-  const checkDownloadCount = async () => {
+  const invoiceState: InvoiceState = useMemo(
+    () => ({ seller, buyer, meta, items, bank, declaration }),
+    [seller, buyer, meta, items, bank, declaration],
+  );
+
+  const handleGenerate = () => setView('preview');
+  const handleBack = () => setView('form');
+
+  const handleDownload = async () => {
     try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        return;
-      }
-
-      // Decode JWT token to get userId
-      const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-      const userId = tokenPayload.userId;
-
-      const response = await fetch(`${API_URL}/api/download-count?userId=${userId}`);
-      const data = await response.json();
-      setDownloadCount(data.count || 0);
-    } catch (error) {
-      console.error('Error checking download count:', error);
-      setDownloadCount(0);
+      setGenerating(true);
+      await generateAndShareInvoicePdf(invoiceState);
+      // refresh count
+      const c = await getDownloadCount();
+      setDownloadCount(c);
+    } catch (e: any) {
+      console.error('PDF error:', e);
+      Alert.alert('PDF Error', e?.message || String(e));
     } finally {
-      setCheckingDownloadCount(false);
+      setGenerating(false);
     }
   };
 
-  const handleWebViewMessage = async (event: any) => {
-    try {
-      const message = JSON.parse(event.nativeEvent.data);
-
-      if (message.type === 'incrementDownloadCount') {
-        // Increment download count in database
-        try {
-          const token = await AsyncStorage.getItem('token');
-          if (!token) {
-            console.error('No token found');
-            return;
-          }
-
-          // Decode JWT token to get userId
-          let userId = '';
-          try {
-            const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-            userId = tokenPayload.userId;
-          } catch (decodeError) {
-            console.error('Token decode error:', decodeError);
-            return;
-          }
-
-          const response = await fetch(`${API_URL}/api/download-count`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ userId }),
-          });
-
-          const result = await response.json();
-          console.log('Download count incremented:', result);
-
-          // Re-fetch download count to update UI
-          checkDownloadCount();
-        } catch (error) {
-          console.error('Error incrementing download count:', error);
-        }
-      } else if (message.type === 'saveSellerData') {
-
-        console.log('Saving seller data:', message.sellerData);
-        // Save seller data to database
-        try {
-          const token = await AsyncStorage.getItem('token');
-          if (!token) {
-            console.error('No token found');
-            return;
-          }
-
-          // Decode JWT token to get userId
-          const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-          const userId = tokenPayload.userId;
-
-          const response = await fetch(`${API_URL}/api/seller`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              ...message.sellerData,
-              userId,
-            }),
-          });
-
-          const result = await response.json();
-          console.log('Seller data saved:', result);
-
-          // Reload sellers dropdown
-          if (webViewRef.current) {
-            webViewRef.current.injectJavaScript(`
-              loadSellersDropdown();
-            `);
-          }
-        } catch (error) {
-          console.error('Error saving seller data:', error);
-        }
-      } else if (message.type === 'saveBuyerData') {
-        // Save buyer data to database
-        try {
-          const token = await AsyncStorage.getItem('token');
-          if (!token) {
-            console.error('No token found');
-            return;
-          }
-
-          // Decode JWT token to get userId
-          const tokenPayload = JSON.parse(atob(token.split('.')[1]));
-          const userId = tokenPayload.userId;
-
-          const response = await fetch(`${API_URL}/api/buyer`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              ...message.buyerData,
-              userId,
-            }),
-          });
-
-          const result = await response.json();
-          console.log('Buyer data saved:', result);
-
-          // Reload buyers dropdown
-          if (webViewRef.current) {
-            webViewRef.current.injectJavaScript(`
-              loadBuyersDropdown();
-            `);
-          }
-        } catch (error) {
-          console.error('Error saving buyer data:', error);
-        }
-      } else if (message.type === 'sharePDF') {
-        const pdfData = message.data;
-        const filename = message.filename;
-
-        // Convert base64 to file
-        const fileUri = `${FileSystem.documentDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, pdfData.split(',')[1], {
-          encoding: 'base64',
-        });
-
-        // Share the PDF
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'application/pdf',
-            dialogTitle: 'Share Invoice PDF',
-          });
-        } else {
-          console.log('Sharing is not available');
-        }
-      }
-    } catch (error) {
-      console.error('Error handling WebView message:', error);
-    }
+  const handleReset = () => {
+    Alert.alert('Reset', 'Are you sure you want to reset the form?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: () => {
+          setSeller(initialSeller);
+          setBuyer(initialBuyer);
+          setMeta(initialMeta);
+          setItems(initialItems);
+          setBank(initialBank);
+          setDeclaration(DEFAULT_DECLARATION);
+        },
+      },
+    ]);
   };
 
-  if (checkingToken || checkingDownloadCount) {
+  if (checkingToken || checkingDownloads) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -217,118 +173,127 @@ export default function InvoiceScreen() {
     );
   }
 
-  if (downloadCount > 15) {
+  if (downloadCount > DOWNLOAD_LIMIT) {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.upgradeContainer}>
           <View style={styles.upgradeHeader}>
             <Text style={styles.upgradeTitle}>Upgrade Plan</Text>
-            <Text style={styles.upgradeSubtitle}>You've reached your free download limit</Text>
+            <Text style={styles.upgradeSubtitle}>You&apos;ve reached your free download limit</Text>
           </View>
           <View style={styles.upgradeContent}>
             <Text style={styles.upgradeText}>
-              You have downloaded {downloadCount} invoices. Your free plan allows up to 15 downloads.
+              You have downloaded {downloadCount} invoices. Your free plan allows up to {DOWNLOAD_LIMIT} downloads.
             </Text>
-            <Text style={styles.upgradeText}>
-              Upgrade to premium to get unlimited downloads and more features.
-            </Text>
-            <TouchableOpacity style={styles.upgradeButton}>
+            <Text style={styles.upgradeText}>Upgrade to premium for unlimited downloads.</Text>
+            <Pressable style={styles.upgradeButton}>
               <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
       </View>
     );
   }
 
-  if (Platform.OS === 'web') {
-    return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <iframe
-          src={require('../assets/images/invoice-generator.html')}
-          style={styles.webview}
-          title="Invoice Generator"
-        />
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <WebView
-        ref={webViewRef}
-        source={require('../assets/images/invoice-generator.html')}
-        originWhitelist={['*']}
-        allowUniversalAccessFromFileURLs={true}
-        allowFileAccess={true}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={true}
-        cacheEnabled={false}
-        style={styles.webview}
-        bounces={false}
-        overScrollMode="never"
-        onMessage={handleWebViewMessage}
-      />
+      {view === 'form' ? (
+        <>
+          <View style={styles.topBar}>
+            <Text style={styles.topTitle}>Tax Invoice Generator</Text>
+            <View style={styles.topActions}>
+              <Pressable onPress={handleGenerate} style={[styles.topBtn, styles.topBtnPrimary]}>
+                <Text style={styles.topBtnText}>Generate Invoice</Text>
+              </Pressable>
+              <Pressable onPress={handleReset} style={[styles.topBtn, styles.topBtnSecondary]}>
+                <Text style={styles.topBtnText}>Reset</Text>
+              </Pressable>
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={styles.scroll}>
+            <SellerForm value={seller} onChange={setSeller} />
+            <BuyerForm value={buyer} onChange={setBuyer} />
+            <MetaForm value={meta} onChange={setMeta} />
+            <ItemsForm items={items} onChange={setItems} />
+            <BankAndDeclarationForm
+              bank={bank}
+              onBankChange={setBank}
+              declaration={declaration}
+              onDeclarationChange={setDeclaration}
+            />
+          </ScrollView>
+        </>
+      ) : (
+        <>
+          <View style={styles.topBar}>
+            <Text style={styles.topTitle}>Invoice Preview</Text>
+            <View style={styles.topActions}>
+              <Pressable onPress={handleBack} style={[styles.topBtn, styles.topBtnSecondary]}>
+                <Text style={styles.topBtnText}>Edit</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleDownload}
+                disabled={generating}
+                style={[styles.topBtn, styles.topBtnSuccess, generating && { opacity: 0.6 }]}
+              >
+                <Text style={styles.topBtnText}>{generating ? 'Generating...' : 'Download PDF'}</Text>
+              </Pressable>
+            </View>
+          </View>
+          <ScrollView>
+            <InvoicePreview state={invoiceState} />
+          </ScrollView>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  scroll: { padding: 12 },
+  topBar: {
     backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderColor: '#e5e7eb',
   },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  topTitle: { fontSize: 18, fontWeight: '700', color: '#1f2937', marginBottom: 8 },
+  topActions: { flexDirection: 'row', gap: 8 },
+  topBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  webview: {
-    flex: 1,
-  },
+  topBtnPrimary: { backgroundColor: '#2563eb' },
+  topBtnSecondary: { backgroundColor: '#475569' },
+  topBtnSuccess: { backgroundColor: '#16a34a' },
+  topBtnText: { color: '#fff', fontWeight: '700', fontSize: 12, letterSpacing: 0.3 },
+
   upgradeContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    margin: 20,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   upgradeHeader: {
-    alignItems: 'center',
-    marginBottom: 32,
+    backgroundColor: '#1e3a8a',
+    padding: 20,
   },
-  upgradeTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-  },
-  upgradeSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  upgradeContent: {
-    width: '100%',
-    maxWidth: 400,
-  },
-  upgradeText: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 12,
-    lineHeight: 24,
-  },
+  upgradeTitle: { color: '#fff', fontSize: 22, fontWeight: '700' },
+  upgradeSubtitle: { color: '#cbd5e1', marginTop: 4 },
+  upgradeContent: { padding: 20 },
+  upgradeText: { fontSize: 14, color: '#374151', marginBottom: 10, lineHeight: 20 },
   upgradeButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
+    marginTop: 12,
+    backgroundColor: '#2563eb',
+    paddingVertical: 12,
+    borderRadius: 8,
     alignItems: 'center',
-    marginTop: 24,
   },
-  upgradeButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  upgradeButtonText: { color: '#fff', fontWeight: '700' },
 });
