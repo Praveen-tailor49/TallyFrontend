@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { InvoiceState } from '../../types/invoice';
 import {
   calculateItemAmount,
@@ -35,6 +35,10 @@ export default function InvoicePreview({ state }: Props) {
   const { subtotal, taxDetails, totalTax, roundOff, grandTotal, totalQty, qtyUnit } = totals;
   const isInterstate = isInterstateTransaction(seller.stateCode, buyer.stateCode);
 
+  const screenWidth = Dimensions.get('window').width;
+  const invoiceWidth = 740;
+  const scale = Math.min(1, (screenWidth - 14) / invoiceWidth);
+
   const rateKeys = Object.keys(taxDetails)
     .map((r) => parseFloat(r))
     .filter((r) => r > 0)
@@ -42,12 +46,12 @@ export default function InvoicePreview({ state }: Props) {
 
   return (
     <ScrollView
-      horizontal
       bounces={false}
       contentContainerStyle={styles.horizontalScroll}
-      showsHorizontalScrollIndicator
+      showsVerticalScrollIndicator
     >
-      <View style={styles.page}>
+      <View style={styles.scrollContent}>
+        <View style={[styles.page, { transform: [{ scale }] }]}>
         {/* Title */}
         <View style={styles.titleBox}>
           <Text style={styles.title}>Tax Invoice</Text>
@@ -250,6 +254,7 @@ export default function InvoicePreview({ state }: Props) {
         <View style={styles.invoiceFooter}>
           <Text style={styles.smallLabel}>This is a Computer Generated Invoice</Text>
         </View>
+      </View>
       </View>
     </ScrollView>
   );
@@ -477,6 +482,9 @@ const styles = StyleSheet.create({
   horizontalScroll: {
     padding: 12,
     backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    alignItems: 'center',
   },
   page: {
     width: 740,

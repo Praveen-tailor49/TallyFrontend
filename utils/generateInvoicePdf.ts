@@ -1,5 +1,7 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import type { InvoiceState } from '../types/invoice';
+import { incrementDownloadCount } from './invoiceApi';
 import {
   calculateItemAmount,
   computeTotals,
@@ -8,8 +10,6 @@ import {
   isInterstateTransaction,
   numberToWords,
 } from './invoiceHelpers';
-import { incrementDownloadCount } from './invoiceApi';
-import type { InvoiceState } from '../types/invoice';
 
 function escapeHtml(s: string | number | null | undefined): string {
   if (s === null || s === undefined) return '';
@@ -26,7 +26,7 @@ function nl2br(s: string | undefined | null): string {
 }
 
 export function buildInvoiceHtml(state: InvoiceState): string {
-  const { seller, buyer, meta, items, bank } = state;
+  const { seller, buyer, meta, items, bank, declaration } = state;
   const totals = computeTotals(items);
   const { subtotal, taxDetails, totalTax, roundOff, grandTotal, totalQty, qtyUnit } = totals;
   const isInterstate = isInterstateTransaction(seller.stateCode, buyer.stateCode);
@@ -50,10 +50,18 @@ export function buildInvoiceHtml(state: InvoiceState): string {
   });
 
   // Subtotal row
+  // Subtotal row
   itemsHtml += `
-    <tr class="subtotal-row">
-      <td colspan="8" style="border:none;border-left:1px solid #000;border-top:1px solid #000;"></td>
-      <td class="right" style="border-top:1px solid #000;border-left:1px solid #000;border-right:1px solid #000;font-weight:bold;">${subtotal.toFixed(2)}</td>
+    <tr>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td class="right" style="border-top:1px solid #000;font-weight:bold;">${subtotal.toFixed(2)}</td>
     </tr>`;
 
   // Tax rows
@@ -71,45 +79,45 @@ export function buildInvoiceHtml(state: InvoiceState): string {
       }
     });
 
-  // Round off
+// Round off
   if (Math.abs(roundOff) >= 0.005) {
     const sign = roundOff < 0 ? '(-)' : '';
     itemsHtml += `
       <tr class="tax-row">
-        <td style="border:none;border-left:1px solid #000;"></td>
-        <td style="border:none;font-style:italic;">
+        <td>&nbsp;</td>
+        <td style="font-style:italic;">
           <span style="float:left;">Less :</span>
           <strong style="float:right;">Round Off</strong>
         </td>
-        <td style="border:none;"></td>
-        <td style="border:none;"></td>
-        <td style="border:none;"></td>
-        <td style="border:none;border-left:1px solid #000;"></td>
-        <td style="border:none;border-left:1px solid #000;"></td>
-        <td style="border:none;border-left:1px solid #000;"></td>
-        <td class="right" style="border:none;border-left:1px solid #000;border-right:1px solid #000;">${sign}${Math.abs(roundOff).toFixed(2)}</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td class="right">${sign}${Math.abs(roundOff).toFixed(2)}</td>
       </tr>`;
   }
 
-  // Empty spacer
+// Empty spacer
   itemsHtml += `
     <tr class="empty-spacer">
-      <td></td><td></td><td></td><td></td><td></td>
-      <td></td><td></td><td></td><td></td>
+      <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
+      <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
     </tr>`;
 
   // Total row
   itemsHtml += `
     <tr class="grand-total-row">
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;border-left:1px solid #000;"></td>
-      <td class="right" style="border-top:1px solid #000;border-bottom:1px solid #000;font-weight:bold;padding-right:8px;">Total</td>
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;"></td>
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;"></td>
-      <td class="center" style="border:1px solid #000;font-weight:bold;">${totalQty} ${escapeHtml(qtyUnit)}</td>
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;"></td>
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;"></td>
-      <td style="border-top:1px solid #000;border-bottom:1px solid #000;"></td>
-      <td class="right" style="border:1px solid #000;font-weight:bold;">${formatCurrency(grandTotal)}</td>
+      <td></td>
+      <td class="right" style="font-weight:bold;padding-right:8px;">Total</td>
+      <td></td>
+      <td></td>
+      <td class="center" style="font-weight:bold;">${totalQty} ${escapeHtml(qtyUnit)}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td class="right" style="font-weight:bold;">${formatCurrency(grandTotal)}</td>
     </tr>`;
 
   // Tax summary rows
@@ -202,11 +210,13 @@ export function buildInvoiceHtml(state: InvoiceState): string {
   .meta-cell .value { font-weight:bold; font-size:11px; }
   .items-table { width:100%; border-collapse:collapse; }
   .items-table th { border:1px solid #000; padding:4px 2px; text-align:center; font-size:11px; font-weight:bold; background:#f5f5f5; }
-  .items-table td { border-left:1px solid #000; border-right:1px solid #000; padding:4px 2px; font-size:11px; vertical-align:top; }
+  .items-table td { border-top:none; border-bottom:none; border-left:1px solid #000; border-right:1px solid #000; padding:4px 2px; font-size:11px; vertical-align:top; }
   .items-table td.desc { font-weight:bold; }
   .items-table td.right { text-align:right; }
   .items-table td.center { text-align:center; }
-  .empty-spacer td { border-left:1px solid #000; border-right:1px solid #000; height:120px; }
+  .tax-row td { border-top:none; border-bottom:none; border-left:1px solid #000; border-right:1px solid #000; }
+  .grand-total-row td { border:1px solid #000; }
+  .empty-spacer td { border-top:none; border-bottom:none; border-left:1px solid #000; border-right:1px solid #000; height:120px; }
   .amount-words-row { display:flex; border-bottom:1px solid #000; border-left:1px solid #000; border-right:1px solid #000; padding:4px 6px; justify-content:space-between; align-items:center; }
   .amount-words-row .label { font-size:10px; color:#333; }
   .amount-words-row .words { font-weight:bold; font-size:11px; }
@@ -308,7 +318,7 @@ export function buildInvoiceHtml(state: InvoiceState): string {
       <div class="footer-section">
         <div class="declaration-block">
           <div class="decl-title">Declaration</div>
-          <p>${nl2br(state.declaration)}</p>
+          <p>${nl2br(declaration)}</p>
         </div>
         <div class="signature-block">
           <div class="bank-details">
@@ -346,15 +356,15 @@ function metaRow(l1: string, v1: string | undefined, l2: string, v2: string | un
 function taxRowHtml(label: string, rateNum: number, amount: number): string {
   return `
     <tr class="tax-row">
-      <td style="border:none;border-left:1px solid #000;"></td>
-      <td class="right" style="border:none;font-style:italic;font-weight:bold;padding-right:8px;">${escapeHtml(label)}</td>
-      <td style="border:none;"></td>
-      <td style="border:none;"></td>
-      <td style="border:none;"></td>
-      <td class="right" style="border:none;border-left:1px solid #000;">${rateNum}</td>
-      <td class="center" style="border:none;border-left:1px solid #000;">%</td>
-      <td style="border:none;border-left:1px solid #000;"></td>
-      <td class="right" style="border:none;border-left:1px solid #000;border-right:1px solid #000;">${amount.toFixed(2)}</td>
+      <td>&nbsp;</td>
+      <td class="right" style="font-style:italic;font-weight:bold;padding-right:8px;">${escapeHtml(label)}</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td>&nbsp;</td>
+      <td class="right">${rateNum}</td>
+      <td class="center">%</td>
+      <td>&nbsp;</td>
+      <td class="right">${amount.toFixed(2)}</td>
     </tr>`;
 }
 
@@ -367,7 +377,7 @@ export async function generateAndShareInvoicePdf(state: InvoiceState): Promise<v
     base64: false,
   });
   // increment download count (best-effort, non-blocking)
-  incrementDownloadCount().catch(() => {});
+  incrementDownloadCount().catch(() => { });
   if (await Sharing.isAvailableAsync()) {
     await Sharing.shareAsync(uri, {
       mimeType: 'application/pdf',
